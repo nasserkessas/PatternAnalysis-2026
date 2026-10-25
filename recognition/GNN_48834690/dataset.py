@@ -11,6 +11,7 @@ of training nodes are ever used in the loss. Validation/test labels are hidden
 behind boolean masks and only read when computing metrics.
 """
 
+import csv
 import os
 import urllib.request
 
@@ -19,6 +20,8 @@ import torch
 from torch_geometric.data import Data
 
 NPZ_URL = "https://raw.githubusercontent.com/gayanku/facebook_page-page_dataset/main/facebook.npz"
+TARGET_CSV_URL = ("https://raw.githubusercontent.com/gayanku/facebook_page-page_dataset/main/"
+                  "facebook_large/musae_facebook_target.csv")
 DEFAULT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 # Label order is alphabetical. The dataset README lists a different order, but the
 # per-label counts (6495, 6880, 5768, 3327) match SNAP's published class sizes
@@ -36,15 +39,21 @@ def download_npz(root=DEFAULT_ROOT):
     return path
 
 
-def load_page_names(root=DEFAULT_ROOT):
-    """Return the human-readable page names (used for failure-case analysis).
+def load_page_info(root=DEFAULT_ROOT):
+    """Return (page_names, page_types) for every node, from the raw MUSAE target CSV.
 
-    ``page_name`` is stored as a pickled object array, so it needs
-    ``allow_pickle=True``. It is kept separate from ``load_graph`` so the
-    numeric arrays used for training never go through pickle.
+    Used for failure-case analysis. The npz also stores page names, but as a
+    pickled object array; reading the plain CSV avoids unpickling a downloaded
+    file. Rows are ordered by node id, matching the npz.
     """
-    with np.load(download_npz(root), allow_pickle=True) as npz:
-        return npz["page_name"]
+    os.makedirs(root, exist_ok=True)
+    path = os.path.join(root, "musae_facebook_target.csv")
+    if not os.path.exists(path):
+        print(f"Downloading {TARGET_CSV_URL} -> {path}")
+        urllib.request.urlretrieve(TARGET_CSV_URL, path)
+    with open(path, newline="", encoding="utf-8") as f:
+        rows = sorted(csv.DictReader(f), key=lambda r: int(r["id"]))
+    return [r["page_name"] for r in rows], [r["page_type"] for r in rows]
 
 
 def stratified_split(y, train_frac=0.7, val_frac=0.15, seed=42):
@@ -105,3 +114,8 @@ if __name__ == "__main__":
     src, dst = data.edge_index
     homophily = (data.y[src] == data.y[dst]).float().mean().item()
     print(f"Edge homophily (fraction of edges joining same-class pages): {homophily:.3f}")
+
+    # Verify the label mapping and node ordering against the raw CSV's text labels.
+    names, types = load_page_info()
+    matches = sum(CLASS_NAMES[int(label)] == t for label, t in zip(data.y, types))
+    print(f"Labels matching raw CSV page_type: {matches}/{data.num_nodes}")
