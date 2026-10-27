@@ -204,6 +204,19 @@ def main():
               f"automates {rule['test_coverage']:.1%} of test pages at {rule['test_accuracy']:.2%} accuracy, "
               f"routes {rule['routed_to_human']} to review, catching {rule['errors_caught']}/{rule['errors_total']} errors")
 
+    # Combined guardrail: automate only if the GCN is confident AND the feature-only
+    # MLP agrees. Targets confident errors caused by misleading neighbourhoods.
+    gcn_pred, mlp_pred = probs_all["gcn"].argmax(axis=1), probs_all["mlp"].argmax(axis=1)
+    gcn_conf, gcn_ok = probs_all["gcn"].max(axis=1), gcn_pred == y
+    auto = test & (gcn_conf >= stats["gcn"]["rule"]["threshold"]) & (gcn_pred == mlp_pred)
+    combined = {"test_coverage": float(auto.sum() / test.sum()),
+                "test_accuracy": float(gcn_ok[auto].mean()),
+                "errors_automated": int((auto & ~gcn_ok).sum())}
+    stats["gcn"]["combined_rule"] = combined
+    print(f"\nCombined rule (GCN conf >= {stats['gcn']['rule']['threshold']:.3f} AND MLP agrees): "
+          f"automates {combined['test_coverage']:.1%} of test pages at {combined['test_accuracy']:.2%} "
+          f"accuracy, {combined['errors_automated']} errors slip through")
+
     plot_tsne(embeddings, y[test], os.path.join(FIGURE_DIR, "tsne.png"), args.seed)
     plot_calibration(stats, os.path.join(FIGURE_DIR, "calibration.png"))
     plot_coverage(stats, os.path.join(FIGURE_DIR, "reject_option.png"))

@@ -25,6 +25,11 @@
       "routed_to_human": 1916,
       "errors_caught": 176,
       "errors_total": 192
+    },
+    "combined_rule": {
+      "test_coverage": 0.38986065816780313,
+      "test_accuracy": 0.9931558935361217,
+      "errors_automated": 9
     }
   },
   "gcn_failures": [
